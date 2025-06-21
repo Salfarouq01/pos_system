@@ -1,45 +1,43 @@
 <?php
-// session_start();
-// if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-//     header("Location: login.php");
-//     exit;
-// }
-
 require 'db.php';
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-$reportType = $_GET['type'] ?? 'daily'; // daily, weekly, monthly, annually
+$reportType = $_GET['type'] ?? 'daily';
 
 switch ($reportType) {
     case 'weekly':
-        $groupBy = "YEARWEEK(created_at, 1)";
-        $dateLabel = "YEARWEEK(created_at, 1)";
+        $groupBy = "YEARWEEK(o.created_at, 1)";
+        $dateLabel = "YEARWEEK(o.created_at, 1)";
         break;
     case 'monthly':
-        $groupBy = "YEAR(created_at), MONTH(created_at)";
-        $dateLabel = "DATE_FORMAT(created_at, '%Y-%m')";
+        $groupBy = "YEAR(o.created_at), MONTH(o.created_at)";
+        $dateLabel = "DATE_FORMAT(o.created_at, '%Y-%m')";
         break;
     case 'annually':
-        $groupBy = "YEAR(created_at)";
-        $dateLabel = "YEAR(created_at)";
+        $groupBy = "YEAR(o.created_at)";
+        $dateLabel = "YEAR(o.created_at)";
         break;
     default:
-        $groupBy = "DATE(created_at)";
-        $dateLabel = "DATE(created_at)";
+        $groupBy = "DATE(o.created_at)";
+        $dateLabel = "DATE(o.created_at)";
         break;
 }
 
-$stmt = $pdo->query("
-   SELECT 
-    DATE(o.created_at) as order_date, 
-    SUM(o.total) as daily_total
-FROM orders o
-LEFT JOIN orders_item oi ON o.id = oi.order_id
-GROUP BY order_date
-ORDER BY order_date DESC;
+$sql = "
+    SELECT 
+        $dateLabel AS period,
+        p.name AS product_name,
+        SUM(oi.quantity) AS total_quantity,
+        SUM(oi.subtotal) AS total_sales
+    FROM orders o
+    JOIN order_items oi ON o.id = oi.order_id
+    JOIN products p ON oi.product_id = p.id
+    GROUP BY period, product_name
+    ORDER BY period DESC;
+";
 
-");
+$stmt = $pdo->query($sql);
 $report = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -60,21 +58,28 @@ $report = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <a href="?type=annually" class="btn btn-outline-primary <?= $reportType=='annually'?'active':'' ?>">Annually</a>
         <a href="admin.php" class="btn btn-secondary">Back to Admin</a>
     </div>
-    <table class="table table-bordered">
-        <thead>
+    <table class="table table-bordered table-striped">
+        <thead class="table-dark">
             <tr>
-                <th>Period</th><th>Product Name</th><th>Total Quantity Sold</th><th>Total Sales (TZS)</th>
+                <th>Period</th>
+                <th>Product Name</th>
+                <th>Total Quantity Sold</th>
+                <th>Total Sales (TZS)</th>
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($report as $row): ?>
-            <tr>
-                <td><?= htmlspecialchars($row['period']) ?></td>
-                <td><?= htmlspecialchars($row['product_name']) ?></td>
-                <td><?= htmlspecialchars($row['total_quantity']) ?></td>
-                <td><?= number_format($row['total_sales'], 2) ?></td>
-            </tr>
-            <?php endforeach; ?>
+            <?php if (count($report) > 0): ?>
+                <?php foreach ($report as $row): ?>
+                <tr>
+                    <td><?= htmlspecialchars($row['period'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['product_name'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['total_quantity'] ?? '0') ?></td>
+                    <td><?= number_format($row['total_sales'] ?? 0, 2) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr><td colspan="4" class="text-center">No sales data available.</td></tr>
+            <?php endif; ?>
         </tbody>
     </table>
     <a href="export_report.php?type=<?= $reportType ?>&format=pdf" class="btn btn-danger">Download PDF</a>
